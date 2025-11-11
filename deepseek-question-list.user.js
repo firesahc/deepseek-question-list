@@ -192,10 +192,10 @@ function displayResults(contentArea, messageElements) {
 
     messageElements.forEach((item, index) => {
         const listItem = createListItem(item, index);
-        list。appendChild(listItem);
+        list.appendChild(listItem);
     });
 
-    contentArea。appendChild(list);
+    contentArea.appendChild(list);
 }
 
 function createListItem(item, index) {
