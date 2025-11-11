@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.0.0
+// @version      1.1.0
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -18,7 +18,7 @@ function createParserInterface() {
         position: fixed;
         top: 20px;
         right: 20px;
-        width: 225px;
+        width: 220px;
         max-height: 95vh;
         overflow-y: auto;
         background: white;
@@ -95,10 +95,95 @@ function parseTargetAndUpdateList(contentArea) {
 
         contentArea.innerHTML = '';
         displayResults(contentArea, messageElements);
+        
+        // 为每个目标元素添加收起按钮（仅当内容较长时）
+        addCollapseButtonsToElements(messageElements);
     } catch (error) {
         console.error('解析时出错:', error);
         showContentErrorMessage(contentArea, `解析错误: ${error.message}`);
     }
+}
+
+function addCollapseButtonsToElements(messageElements) {
+    messageElements.forEach((item, index) => {
+        const element = item.targetElement;
+
+        // 检查是否已经添加过按钮
+        if (element.hasAttribute('data-collapse-button-added')) {
+            return;
+        }
+
+        // 检查内容是否足够长，需要收起功能
+        const scrollHeight = element.scrollHeight;
+        const clientHeight = element.clientHeight;
+
+        // 如果内容高度不超过400px，不需要添加收起按钮
+        if (scrollHeight <= 400) {
+            return;
+        }
+
+        // 标记已添加按钮
+        element.setAttribute('data-collapse-button-added', 'true');
+
+        // 确保元素有相对定位，以便按钮可以绝对定位
+        const originalPosition = element.style.position;
+        if (!originalPosition || originalPosition === 'static') {
+            element.style.position = 'relative';
+        }
+
+        // 创建收起按钮
+        const collapseButton = document.createElement('button');
+        collapseButton.textContent = '收起';
+        collapseButton.style.cssText = `
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            z-index: 1000;
+            background: rgba(100, 100, 100, 0.8);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        `;
+
+        // 存储原始高度和溢出状态
+        const originalHeight = element.style.height;
+        const originalOverflow = element.style.overflow;
+        let isCollapsed = false;
+
+        collapseButton.addEventListener('mouseenter', () => {
+            collapseButton.style.opacity = '1';
+        });
+
+        collapseButton.addEventListener('mouseleave', () => {
+            collapseButton.style.opacity = '0.8';
+        });
+
+        collapseButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+
+            if (isCollapsed) {
+                // 展开
+                element.style.height = originalHeight || '';
+                element.style.overflow = originalOverflow || '';
+                collapseButton.textContent = '收起';
+                isCollapsed = false;
+            } else {
+                // 收起
+                element.style.height = '110px';
+                element.style.overflow = 'hidden';
+                collapseButton.textContent = '展开';
+                isCollapsed = true;
+            }
+        });
+
+        // 添加按钮到元素
+        element.appendChild(collapseButton);
+    });
 }
 
 function displayResults(contentArea, messageElements) {
@@ -107,10 +192,10 @@ function displayResults(contentArea, messageElements) {
 
     messageElements.forEach((item, index) => {
         const listItem = createListItem(item, index);
-        list.appendChild(listItem);
+        list。appendChild(listItem);
     });
 
-    contentArea.appendChild(list);
+    contentArea。appendChild(list);
 }
 
 function createListItem(item, index) {
@@ -150,7 +235,7 @@ function createListItem(item, index) {
     listItem.appendChild(indexInfo);
     listItem.appendChild(contentPreview);
 
-    //点击跳转
+    //点击跳转到问题起始
     listItem.addEventListener('click', () => {
         item.targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
