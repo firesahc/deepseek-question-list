@@ -201,7 +201,7 @@ function displayResults(contentArea, messageElements) {
 function createListItem(item, index) {
     const listItem = document.createElement('li');
     listItem.style.cssText = `
-        margin-bottom: 8px;
+        margin-bottom: 4px;
         padding: 4px;
         border: 1px solid #e0e0e0;
         border-radius: 6px;
@@ -221,11 +221,11 @@ function createListItem(item, index) {
     });
 
     const indexInfo = document.createElement('div');
-    indexInfo.style.cssText = 'font-weight: bold; color: #2196F3; margin-bottom: 1px; font-size: 14px;';
+    indexInfo.style.cssText = 'font-weight: bold; color: #2196F3; margin-bottom: 4px; font-size: 14px;';
     indexInfo.textContent = `问题 ${index + 1}`;
 
     const contentPreview = document.createElement('div');
-    contentPreview.style.cssText = 'color: #333; font-size: 13px; margin-bottom: 1px; line-height: 1.4; background: white; padding: 4px; border-radius: 4px; border: 1px solid #e0e0e0;';
+    contentPreview.style.cssText = 'color: #333; font-size: 13px; margin-bottom: 4px; line-height: 1.4; background: white; padding: 4px; border-radius: 4px; border: 1px solid #e0e0e0;';
 
     const textContent = item.targetElement.textContent?.trim() || '';
     contentPreview.textContent = textContent ?
@@ -322,9 +322,9 @@ function showContentErrorMessage(contentArea, message) {
         background: #ffebee;
         color: #c62828;
         border: 2px solid #f44336;
-        padding: 15px;
+        padding: 4px;
         border-radius: 8px;
-        margin-bottom: 15px;
+        margin-bottom: 4px;
         font-family: Arial, sans-serif;
         white-space: pre-line;
     `;
@@ -348,9 +348,9 @@ function showContentInfoMessage(contentArea, message) {
         background: #e3f2fd;
         color: #1565c0;
         border: 2px solid #2196F3;
-        padding: 15px;
+        padding: 4px;
         border-radius: 8px;
-        margin-bottom: 15px;
+        margin-bottom: 4px;
         font-family: Arial, sans-serif;
         text-align: center;
     `;
