@@ -120,7 +120,7 @@ function startObservation(contentArea) {
             debounceTimer = setTimeout(() => {
                 console.log('检测到DOM变化，自动重新解析');
                 parseTargetAndUpdateList(contentArea);
-            }， 300);
+            }, 300);
         }
     });
 
@@ -128,7 +128,7 @@ function startObservation(contentArea) {
     const targetElements = document.querySelectorAll('._0f72b0b.ds-scroll-area');
 
     if (targetElements.length === 0) {
-        console。warn('未找到 class="_0f72b0b ds-scroll-area" 的元素');
+        console.warn('未找到 class="_0f72b0b ds-scroll-area" 的元素');
         return;
     }
 
@@ -137,7 +137,7 @@ function startObservation(contentArea) {
     // 开始观察目标元素
     observer.observe(targetElement, {
         childList: true,
-        subtree: true，
+        subtree: true,
         attributes: false,
         characterData: false
     });
