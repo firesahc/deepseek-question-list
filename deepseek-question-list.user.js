@@ -1,12 +1,16 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.1.0
+// @version      1.2.0
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
 // @grant        none
 // ==/UserScript==
+
+let observer = null;
+let isObserving = false;
+let debounceTimer = null;
 
 function createParserInterface() {
     const existingList = document.getElementById('xpath-parser-list');
@@ -45,12 +49,111 @@ function createParserInterface() {
 
     const contentArea = document.createElement('div');
     contentArea.id = 'xpath-list-content';
-    contentArea.style.cssText = 'flex: 1; overflow-y: auto; padding: 8px; display: none;';
+    contentArea.style.cssText = 'flex: 1; overflow-y: auto; padding: 4px; display: block;';
 
     listContainer.appendChild(topButtonBar);
     listContainer.appendChild(contentArea);
     addTopButtons(topButtonBar, listContainer, contentArea);
     document.body.appendChild(listContainer);
+
+    // 启动观察器
+    startObservation(contentArea);
+}
+
+function startObservation(contentArea) {
+    if (isObserving) return;
+
+    observer = new MutationObserver((mutations) => {
+        let shouldParse = false;
+
+        for (const mutation of mutations) {
+            // 检查目标元素的类名
+            const targetClass = mutation.target.className;
+
+            // 情况1: 直接检测到 dad65929 的变化
+            if (mutation.type === 'childList' &&
+                typeof targetClass === 'string' &&
+                targetClass.includes('dad65929')) {
+                console.log('检测到 dad65929 容器的子节点变化');
+                shouldParse = true;
+                break;
+            }
+
+            // 情况2: 检测到滚动区域的变化，且涉及 dad65929 节点
+            if (mutation.type === 'childList' &&
+                typeof targetClass === 'string' &&
+                targetClass.includes('_0f72b0b') &&
+                targetClass.includes('ds-scroll-area')) {
+
+                // 检查添加的节点
+                if (mutation.addedNodes.length > 0) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType === Node.ELEMENT_NODE &&
+                            node.classList &&
+                            node.classList.contains('dad65929')) {
+                            console.log('检测到滚动区域添加了 dad65929 节点');
+                            shouldParse = true;
+                            break;
+                        }
+                    }
+                }
+
+                // 检查移除的节点
+                else if (mutation.removedNodes.length > 0) {
+                    for (const node of mutation.removedNodes) {
+                        if (node.nodeType === Node.ELEMENT_NODE &&
+                            node.classList &&
+                            node.classList.contains('dad65929')) {
+                            console.log('检测到滚动区域移除了 dad65929 节点');
+                            shouldParse = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (shouldParse) break;
+            }
+        }
+
+        if (shouldParse) {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                console.log('检测到DOM变化，自动重新解析');
+                parseTargetAndUpdateList(contentArea);
+            }， 300);
+        }
+    });
+
+    // 获取目标元素
+    const targetElements = document.querySelectorAll('._0f72b0b.ds-scroll-area');
+
+    if (targetElements.length === 0) {
+        console。warn('未找到 class="_0f72b0b ds-scroll-area" 的元素');
+        return;
+    }
+
+    const targetElement = targetElements[0];
+
+    // 开始观察目标元素
+    observer.observe(targetElement, {
+        childList: true,
+        subtree: true，
+        attributes: false,
+        characterData: false
+    });
+
+    isObserving = true;
+    console.log('DOM观察器已启动，观察目标:', targetElement);
+}
+
+function stopObservation() {
+    if (observer) {
+        observer.disconnect();
+        observer = null;
+        isObserving = false;
+        clearTimeout(debounceTimer);
+        console.log('DOM观察器已停止');
+    }
 }
 
 function parseTargetAndUpdateList(contentArea) {
@@ -275,6 +378,7 @@ function addTopButtons(buttonContainer, listContainer, contentArea) {
     });
 
     const closeButton = createButton('关闭', '#f44336', '#D32F2F', () => {
+        stopObservation();
         if (document.body.contains(listContainer)) {
             document.body.removeChild(listContainer);
         }
