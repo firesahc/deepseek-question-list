@@ -56,8 +56,11 @@ function createParserInterface() {
     addTopButtons(topButtonBar, listContainer, contentArea);
     document.body.appendChild(listContainer);
 
-    // 启动观察器
-    startObservation(contentArea);
+    // 延迟启动观察器
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+        startObservation(contentArea);
+    }, 350)
 }
 
 function startObservation(contentArea) {
