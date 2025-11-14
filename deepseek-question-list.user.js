@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.2.0
+// @version      1.3.0
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -12,7 +12,7 @@ let observer = null;
 let isObserving = false;
 let debounceTimer = null;
 
-function createParserInterface() {
+function createParserInit() {
     const existingList = document.getElementById('xpath-parser-list');
     if (existingList) existingList.remove();
 
@@ -64,7 +64,7 @@ function createParserInterface() {
 }
 
 function startObservation(contentArea) {
-    if (isObserving) return;
+    if (isObserving) return true;
 
     observer = new MutationObserver((mutations) => {
         let shouldParse = false;
@@ -77,7 +77,6 @@ function startObservation(contentArea) {
             if (mutation.type === 'childList' &&
                 typeof targetClass === 'string' &&
                 targetClass.includes('dad65929')) {
-                console.log('检测到 dad65929 容器的子节点变化');
                 shouldParse = true;
                 break;
             }
@@ -94,7 +93,6 @@ function startObservation(contentArea) {
                         if (node.nodeType === Node.ELEMENT_NODE &&
                             node.classList &&
                             node.classList.contains('dad65929')) {
-                            console.log('检测到滚动区域添加了 dad65929 节点');
                             shouldParse = true;
                             break;
                         }
@@ -107,7 +105,6 @@ function startObservation(contentArea) {
                         if (node.nodeType === Node.ELEMENT_NODE &&
                             node.classList &&
                             node.classList.contains('dad65929')) {
-                            console.log('检测到滚动区域移除了 dad65929 节点');
                             shouldParse = true;
                             break;
                         }
@@ -121,8 +118,12 @@ function startObservation(contentArea) {
         if (shouldParse) {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
-                console.log('检测到DOM变化，自动重新解析');
-                parseTargetAndUpdateList(contentArea);
+                const messageElements = parseElements(contentArea);
+                contentArea.innerHTML = '';
+                addListMessages(contentArea, messageElements);
+
+                // 为每个目标元素添加收起按钮（仅当内容较长时）
+                addElementCollapseButtons(messageElements);
             }, 300);
         }
     });
@@ -131,22 +132,26 @@ function startObservation(contentArea) {
     const targetElements = document.querySelectorAll('._0f72b0b.ds-scroll-area');
 
     if (targetElements.length === 0) {
-        console.warn('未找到 class="_0f72b0b ds-scroll-area" 的元素');
-        return;
+        return false;
     }
 
     const targetElement = targetElements[0];
 
-    // 开始观察目标元素
-    observer.observe(targetElement, {
-        childList: true,
-        subtree: true,
-        attributes: false,
-        characterData: false
-    });
+    try {
+        // 开始观察目标元素
+        observer.observe(targetElement, {
+            childList: true,
+            subtree: true,
+            attributes: false,
+            characterData: false
+        });
 
-    isObserving = true;
-    console.log('DOM观察器已启动，观察目标:', targetElement);
+        isObserving = true;
+        return true;
+    } catch (error) {
+        isObserving = false;
+        return false;
+    }
 }
 
 function stopObservation() {
@@ -155,11 +160,10 @@ function stopObservation() {
         observer = null;
         isObserving = false;
         clearTimeout(debounceTimer);
-        console.log('DOM观察器已停止');
     }
 }
 
-function parseTargetAndUpdateList(contentArea) {
+function parseElements(contentArea) {
     try {
         contentArea.innerHTML = '';
         const targetElements = document.getElementsByClassName('dad65929');
@@ -198,19 +202,15 @@ function parseTargetAndUpdateList(contentArea) {
             showContentInfoMessage(contentArea, '未找到符合条件的元素');
             return;
         }
-
-        contentArea.innerHTML = '';
-        displayResults(contentArea, messageElements);
-        
-        // 为每个目标元素添加收起按钮（仅当内容较长时）
-        addCollapseButtonsToElements(messageElements);
+        else{
+            return messageElements;
+        }
     } catch (error) {
-        console.error('解析时出错:', error);
         showContentErrorMessage(contentArea, `解析错误: ${error.message}`);
     }
 }
 
-function addCollapseButtonsToElements(messageElements) {
+function addElementCollapseButtons(messageElements) {
     messageElements.forEach((item, index) => {
         const element = item.targetElement;
 
@@ -292,7 +292,7 @@ function addCollapseButtonsToElements(messageElements) {
     });
 }
 
-function displayResults(contentArea, messageElements) {
+function addListMessages(contentArea, messageElements) {
     const list = document.createElement('ul');
     list.style.cssText = 'list-style: none; margin: 0; padding: 0;';
 
@@ -362,13 +362,25 @@ function addTopButtons(buttonContainer, listContainer, contentArea) {
         min-width: 30px;
     `;
 
-    const parseButton = createButton('开始解析', '#2196F3', '#1976D2', () => {
-        const toggleButton = buttonContainer.querySelector('button:nth-child(2)');
-        toggleButton.textContent = '隐藏列表';
-        isContentVisible = true;
-        contentArea.style.display = 'block';
-        listContainer.style.maxHeight = '95vh';
-        parseTargetAndUpdateList(contentArea);
+    const parseButton = createButton(isObserving? '停止解析':'开始解析', '#2196F3', '#1976D2', () => {
+        if (isObserving) {
+            // 停止解析
+            stopObservation();
+            parseButton.textContent = '开始解析';
+        } else {
+            // 开始解析
+            const success = startObservation(contentArea);
+            if (success) {
+                parseButton.textContent = '停止解析';
+                // 立即执行一次解析
+                const messageElements = parseElements(contentArea);
+                contentArea.innerHTML = '';
+                addListMessages(contentArea, messageElements);
+
+                // 为每个目标元素添加收起按钮（仅当内容较长时）
+                addElementCollapseButtons(messageElements);
+            }
+        }
     });
 
     let isContentVisible = true;
@@ -474,17 +486,21 @@ function showContentInfoMessage(contentArea, message) {
 }
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', createParserInterface);
+    document.addEventListener('DOMContentLoaded', createParserInit);
 } else {
-    createParserInterface();
+    createParserInit();
 }
 
-window.createParser = createParserInterface;
+window.createParser = createParserInit;
 window.parseTarget = function() {
     const contentArea = document.getElementById('xpath-list-content');
     if (contentArea) {
-        contentArea.style.display = 'block';
-        parseTargetAndUpdateList(contentArea);
+        const messageElements = parseElements(contentArea);
+        contentArea.innerHTML = '';
+        addListMessages(contentArea, messageElements);
+
+        // 为每个目标元素添加收起按钮（仅当内容较长时）
+        addElementCollapseButtons(messageElements);
     }
 };
 
