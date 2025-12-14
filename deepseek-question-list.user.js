@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.3.0
+// @version      1.4.0
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -53,13 +53,14 @@ function createParserInit() {
 
     listContainer.appendChild(topButtonBar);
     listContainer.appendChild(contentArea);
-    addTopButtons(topButtonBar, listContainer, contentArea);
-    document.body.appendChild(listContainer);
 
     // 延迟启动观察器
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
         startObservation(contentArea);
+
+        addTopButtons(topButtonBar, listContainer, contentArea);
+        document.body.appendChild(listContainer);
     }, 350)
 }
 
@@ -113,6 +114,18 @@ function startObservation(contentArea) {
 
                 if (shouldParse) break;
             }
+
+            // 情况3: 检测到class属性移除了"_3111eee"
+            if (mutation.type === 'attributes' &&
+                typeof mutation.oldValue === 'string' &&
+                mutation.oldValue.includes('_9663006') &&
+                mutation.oldValue.includes('_3111eee')) {
+
+                if (!targetClass.includes('_3111eee')) {
+                    shouldParse = true;
+                    break;
+                }
+            }
         }
 
         if (shouldParse) {
@@ -142,7 +155,9 @@ function startObservation(contentArea) {
         observer.observe(targetElement, {
             childList: true,
             subtree: true,
-            attributes: false,
+            attributes: true,
+            attributeFilter: ['class'],
+            attributeOldValue: true,
             characterData: false
         });
 
