@@ -5,6 +5,7 @@
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
+// @license      MIT
 // @grant        none
 // ==/UserScript==
 
