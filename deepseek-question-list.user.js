@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.4.0
+// @version      1.4.1
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -206,8 +206,6 @@ function parseElements(contentArea) {
                 const targetElements = messageElement.querySelectorAll('.fbb737a4');
                 targetElements.forEach(element => {
                     messageElements.push({
-                        container: div,
-                        messageElement: messageElement,
                         targetElement: element
                     });
                 });
