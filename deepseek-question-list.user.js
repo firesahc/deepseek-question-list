@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.4.1
+// @version      1.5.0
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -59,6 +59,7 @@ function createParserInit() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
         startObservation(contentArea);
+        addQuestionCollapseButtons();
 
         addTopButtons(topButtonBar, listContainer, contentArea);
         document.body.appendChild(listContainer);
@@ -182,36 +183,20 @@ function stopObservation() {
 function parseElements(contentArea) {
     try {
         contentArea.innerHTML = '';
-        const targetElements = document.getElementsByClassName('dad65929');
+        const targetElements = document.querySelectorAll('.fbb737a4');
 
         if (targetElements.length === 0) {
-            showContentErrorMessage(contentArea, '未找到class="dad65929"的元素。');
-            return;
-        }
-
-        const targetElement = targetElements[0];
-        const firstLevelDivs = Array.from(targetElement.children).filter(child =>
-            child.tagName.toLowerCase() === 'div' && child.classList.contains('_9663006')
-        );
-
-        if (firstLevelDivs.length === 0) {
-            showContentInfoMessage(contentArea, '未找到class="_9663006"的第一层div');
+            showContentErrorMessage(contentArea, '未找到class=".fbb737a4"的元素。');
             return;
         }
 
         const messageElements = [];
-        firstLevelDivs.forEach(div => {
-            const messageElementsInDiv = div.querySelectorAll('.d29f3d7d.ds-message');
-            messageElementsInDiv.forEach(messageElement => {
-                const targetElements = messageElement.querySelectorAll('.fbb737a4');
-                targetElements.forEach(element => {
-                    messageElements.push({
-                        targetElement: element
-                    });
-                });
+        targetElements.forEach(element => {
+            messageElements.push({
+                targetElement: element
             });
         });
-
+       
         if (messageElements.length === 0) {
             showContentInfoMessage(contentArea, '未找到符合条件的元素');
             return;
@@ -235,7 +220,6 @@ function addElementCollapseButtons(messageElements) {
 
         // 检查内容是否足够长，需要收起功能
         const scrollHeight = element.scrollHeight;
-        const clientHeight = element.clientHeight;
 
         // 如果内容高度不超过400px，不需要添加收起按钮
         if (scrollHeight <= 400) {
@@ -304,6 +288,58 @@ function addElementCollapseButtons(messageElements) {
         // 添加按钮到元素
         element.appendChild(collapseButton);
     });
+}
+
+function addQuestionCollapseButtons(){
+    // 尝试查找目标元素
+    const questionElements = document.querySelectorAll('._871cbca');
+
+    const toggleButton = document.createElement('button');
+
+    // 如果目标元素不存在，禁用按钮并给出提示
+    if (!questionElements) {
+        toggleButton.textContent = '元素未找到';
+        toggleButton.style.backgroundColor = 'rgba(255, 0, 0, 0.3)';
+        toggleButton.disabled = true;
+        return;
+    }
+
+    toggleButton.textContent = '▼';
+    toggleButton.style.cssText = `
+        position: fixed;
+        bottom: 0; /* 固定在页面最底部 */
+        left: 50%; /* 水平居中定位 */
+        transform: translateX(-50%); /* 水平居中调整 */
+        z-index: 1000;
+        padding: 8px 20px;
+        background-color: rgba(255, 255, 255, 0.3);
+        color: #000;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-bottom: none;
+        border-radius: 8px 8px 0 0;
+        cursor: pointer;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        font-size: 10px;
+        font-weight: bold;
+        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+    `;
+
+    // 添加点击事件
+    toggleButton.addEventListener('click', function () {
+        questionElements.forEach(element => {
+            if (element.style.display === 'none') {
+                element.style.display = 'block';
+                toggleButton.textContent = '▼';
+            } else {
+                element.style.display = 'none';
+                toggleButton.textContent = '▲';
+            }
+        });
+    });
+
+    document.body.appendChild(toggleButton);
 }
 
 function addListMessages(contentArea, messageElements) {
