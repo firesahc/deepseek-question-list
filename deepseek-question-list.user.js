@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.7.0
+// @version      1.7.1
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -447,7 +447,6 @@ function addTopButtons(buttonContainer, listContainer, contentArea) {
         }
     });
 
-    let isContentVisible = true;
     const toggleButton = createButton(isContentVisible ? '隐藏列表' : '显示列表', '#FF9800', '#F57C00', () => {
         isContentVisible = !isContentVisible;
         contentArea.style.display = isContentVisible ? 'block' : 'none';
