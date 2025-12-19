@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.5.1
+// @version      1.5.2
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -50,8 +50,13 @@ function createParserInit() {
 
     const contentArea = document.createElement('div');
     contentArea.id = 'xpath-list-content';
-    contentArea.style.cssText = 'flex: 1; overflow-y: auto; padding: 4px; display: block;';
-
+    contentArea.style.cssText = `
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px;
+        display: block;
+    `;
+    
     listContainer.appendChild(topButtonBar);
     listContainer.appendChild(contentArea);
 
@@ -144,14 +149,12 @@ function startObservation(contentArea) {
     });
 
     // 获取目标元素
-    const targetElements = document.querySelectorAll('._0f72b0b.ds-scroll-area');
+    const targetElement = document.querySelector('._0f72b0b.ds-scroll-area');
 
-    if (targetElements.length === 0) {
+    if (targetElement.length === 0) {
         return false;
     }
-
-    const targetElement = targetElements[0];
-
+    
     try {
         // 开始观察目标元素
         observer.observe(targetElement, {
@@ -218,11 +221,8 @@ function addElementCollapseButtons(messageElements) {
             return;
         }
 
-        // 检查内容是否足够长，需要收起功能
-        const scrollHeight = element.scrollHeight;
-
         // 如果内容高度不超过400px，不需要添加收起按钮
-        if (scrollHeight <= 400) {
+        if (element.scrollHeight <= 400) {
             return;
         }
 
@@ -292,47 +292,58 @@ function addElementCollapseButtons(messageElements) {
 
 function addQuestionCollapseButtons(){
     // 尝试查找目标元素
-    const questionElements = document.querySelectorAll('._871cbca');
+    const questionElement = document.querySelector('._871cbca');
     
     // 如果目标元素不存在，不添加按钮
-    if (questionElements.length === 0) {
+    if (questionElement.length === 0) {
         return;
     }
     
+    // 获取目标容器元素
+    const containerElement = document.querySelector('._7780f2e');
     const toggleButton = document.createElement('button');
-    toggleButton.textContent = '▼';
-    toggleButton.style.cssText = `
-        position: fixed;
-        bottom: 0; /* 固定在页面最底部 */
-        left: 50%; /* 水平居中定位 */
-        transform: translateX(-50%); /* 水平居中调整 */
-        z-index: 1000;
-        padding: 8px 20px;
-        background-color: rgba(255, 255, 255, 0.3);
-        color: #000;
-        border: 1px solid rgba(0, 0, 0, 0.1);
-        border-bottom: none;
-        border-radius: 8px 8px 0 0;
-        cursor: pointer;
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        font-size: 10px;
-        font-weight: bold;
-        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
-        transition: all 0.3s ease;
-    `;
+
+    // 如果容器元素不存在，不添加
+    if (containerElement.length === 0) {
+        return;
+    } else {
+        toggleButton.textContent = '▼';
+        // 设置容器元素为相对定位，以便按钮可以相对于它定位
+        containerElement.style.position = 'relative';
+        // 将按钮添加到容器元素内部
+        containerElement.appendChild(toggleButton);
+        // 设置按钮样式 - 在容器元素内部居中
+        toggleButton.style.cssText = `
+            position: absolute;
+            bottom: 0; 
+            left: 50%; /* 水平居中定位 */
+            transform: translateX(-50%); /* 水平居中调整 */
+            z-index: 1000;
+            padding: 8px 20px;
+            background-color: rgba(255, 255, 255, 0.3);
+            color: #000;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            font-size: 10px;
+            font-weight: bold;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        `;
+    }
 
     // 添加点击事件
     toggleButton.addEventListener('click', function () {
-        questionElements.forEach(element => {
-            if (element.style.display === 'none') {
-                element.style.display = 'block';
-                toggleButton.textContent = '▼';
-            } else {
-                element.style.display = 'none';
-                toggleButton.textContent = '▲';
-            }
-        });
+        if (questionElement.style.display === 'none') {
+            questionElement.style.display = 'block';
+            toggleButton.textContent = '▼';
+        } else {
+            questionElement.style.display = 'none';
+            toggleButton.textContent = '▲';
+        };
     });
 
     document.body.appendChild(toggleButton);
@@ -340,7 +351,11 @@ function addQuestionCollapseButtons(){
 
 function addListMessages(contentArea, messageElements) {
     const list = document.createElement('ul');
-    list.style.cssText = 'list-style: none; margin: 0; padding: 0;';
+    list.style.cssText = `
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    `;
 
     messageElements.forEach((item, index) => {
         const listItem = createListItem(item, index);
@@ -373,12 +388,24 @@ function createListItem(item, index) {
     });
 
     const indexInfo = document.createElement('div');
-    indexInfo.style.cssText = 'font-weight: bold; color: #2196F3; margin-bottom: 4px; font-size: 14px;';
+    indexInfo.style.cssText = `
+        font-weight: bold;
+        color: #2196F3;
+        font-size: 14px;
+    `;
     indexInfo.textContent = `问题 ${index + 1}`;
 
     const contentPreview = document.createElement('div');
-    contentPreview.style.cssText = 'color: #333; font-size: 13px; margin-bottom: 4px; line-height: 1.4; background: white; padding: 4px; border-radius: 4px; border: 1px solid #e0e0e0;';
-
+    contentPreview.style.cssText = `
+        color: #333;
+        font-size: 13px;
+        line-height: 1.4;
+        background: white;
+        padding: 4px;
+        border-radius: 4px;
+        border: 1px solid #e0e0e0;
+    `;
+    
     const textContent = item.targetElement.textContent?.trim() || '';
     contentPreview.textContent = textContent ?
         (textContent.length > 120 ? textContent.substring(0, 120) + '...' : textContent) :
@@ -549,5 +576,3 @@ window.parseTarget = function() {
         addElementCollapseButtons(messageElements);
     }
 };
-
-console.log('解析器已加载。使用 createParser() 创建界面，使用 parseTarget() 开始解析');
