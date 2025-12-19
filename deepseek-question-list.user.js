@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.5.3
+// @version      1.5.4
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -65,7 +65,6 @@ function createParserInit() {
     debounceTimer = setTimeout(() => {
         startObservation(contentArea);
         addQuestionCollapseButtons();
-
         addTopButtons(topButtonBar, listContainer, contentArea);
         document.body.appendChild(listContainer);
     }, 350)
@@ -76,11 +75,10 @@ function startObservation(contentArea) {
 
     observer = new MutationObserver((mutations) => {
         let shouldParse = false;
-
         for (const mutation of mutations) {
             // 检查目标元素的类名
             const targetClass = mutation.target.className;
-
+            
             // 情况1: 直接检测到 dad65929 的变化
             if (mutation.type === 'childList' &&
                 typeof targetClass === 'string' &&
@@ -88,13 +86,12 @@ function startObservation(contentArea) {
                 shouldParse = true;
                 break;
             }
-
+            
             // 情况2: 检测到滚动区域的变化，且涉及 dad65929 节点
             if (mutation.type === 'childList' &&
                 typeof targetClass === 'string' &&
                 targetClass.includes('_0f72b0b') &&
                 targetClass.includes('ds-scroll-area')) {
-
                 // 检查添加的节点
                 if (mutation.addedNodes.length > 0) {
                     for (const node of mutation.addedNodes) {
@@ -106,7 +103,6 @@ function startObservation(contentArea) {
                         }
                     }
                 }
-
                 // 检查移除的节点
                 else if (mutation.removedNodes.length > 0) {
                     for (const node of mutation.removedNodes) {
@@ -118,7 +114,6 @@ function startObservation(contentArea) {
                         }
                     }
                 }
-
                 if (shouldParse) break;
             }
 
@@ -127,7 +122,6 @@ function startObservation(contentArea) {
                 typeof mutation.oldValue === 'string' &&
                 mutation.oldValue.includes('_9663006') &&
                 mutation.oldValue.includes('_3111eee')) {
-
                 if (!targetClass.includes('_3111eee')) {
                     shouldParse = true;
                     break;
@@ -150,7 +144,6 @@ function startObservation(contentArea) {
 
     // 获取目标元素
     const targetElement = document.querySelector('._0f72b0b.ds-scroll-area');
-
     if (targetElement.length === 0) {
         return false;
     }
@@ -165,7 +158,6 @@ function startObservation(contentArea) {
             attributeOldValue: true,
             characterData: false
         });
-
         isObserving = true;
         return true;
     } catch (error) {
@@ -187,9 +179,7 @@ function parseElements(contentArea) {
     try {
         contentArea.innerHTML = '';
         const targetElements = document.querySelectorAll('.fbb737a4');
-
         if (targetElements.length === 0) {
-            showContentErrorMessage(contentArea, '未找到class=".fbb737a4"的元素。');
             return;
         }
 
@@ -199,23 +189,21 @@ function parseElements(contentArea) {
                 targetElement: element
             });
         });
-       
         if (messageElements.length === 0) {
-            showContentInfoMessage(contentArea, '未找到符合条件的元素');
             return;
         }
         else{
             return messageElements;
         }
     } catch (error) {
-        showContentErrorMessage(contentArea, `解析错误: ${error.message}`);
+        return;
     }
 }
 
 function addElementCollapseButtons(messageElements) {
     messageElements.forEach((item, index) => {
         const element = item.targetElement;
-
+        
         // 检查是否已经添加过按钮
         if (element.hasAttribute('data-collapse-button-added')) {
             return;
@@ -269,7 +257,6 @@ function addElementCollapseButtons(messageElements) {
 
         collapseButton.addEventListener('click', (e) => {
             e.stopPropagation();
-
             if (isCollapsed) {
                 // 展开
                 element.style.height = originalHeight || '';
@@ -293,17 +280,13 @@ function addElementCollapseButtons(messageElements) {
 function addQuestionCollapseButtons(){
     // 尝试查找目标元素
     const questionElement = document.querySelector('._871cbca');
-    
-    // 如果目标元素不存在，不添加按钮
     if (questionElement.length === 0) {
         return;
     }
     
+    const toggleButton = document.createElement('button');
     // 获取目标容器元素
     const containerElement = document.querySelector('._7780f2e');
-    const toggleButton = document.createElement('button');
-
-    // 如果容器元素不存在，不添加
     if (containerElement.length === 0) {
         return;
     } else {
@@ -406,7 +389,10 @@ function createListItem(item, index) {
     
     const textContent = item.targetElement.textContent?.trim() || '';
     contentPreview.textContent = textContent ?
-        (textContent.length > 120 ? textContent.substring(0, 120) + '...' : textContent) :
+        (textContent.length > 120 ? 
+             textContent.substring(0, 120) + '...' : 
+             textContent
+        ) :
         '[空内容]';
 
     listItem.appendChild(indexInfo);
@@ -463,16 +449,8 @@ function addTopButtons(buttonContainer, listContainer, contentArea) {
         listContainer.style.height = isContentVisible ? '' : 'auto';
     });
 
-    const closeButton = createButton('关闭', '#f44336', '#D32F2F', () => {
-        stopObservation();
-        if (document.body.contains(listContainer)) {
-            document.body.removeChild(listContainer);
-        }
-    });
-
     buttonContainer.appendChild(parseButton);
     buttonContainer.appendChild(toggleButton);
-    buttonContainer.appendChild(closeButton);
 }
 
 function createButton(text, bgColor, hoverColor, clickHandler) {
@@ -502,58 +480,6 @@ function createButton(text, bgColor, hoverColor, clickHandler) {
 
     button.addEventListener('click', clickHandler);
     return button;
-}
-
-function showContentErrorMessage(contentArea, message) {
-    contentArea.innerHTML = '';
-
-    const errorDiv = document.createElement('div');
-    errorDiv.style.cssText = `
-        background: #ffebee;
-        color: #c62828;
-        border: 2px solid #f44336;
-        padding: 4px;
-        border-radius: 8px;
-        margin-bottom: 4px;
-        font-family: Arial, sans-serif;
-        white-space: pre-line;
-    `;
-
-    const title = document.createElement('h3');
-    title.textContent = '解析错误';
-    title.style.cssText = 'margin: 0 0 10px 0; color: #c62828;';
-    errorDiv.appendChild(title);
-
-    const messageDiv = document.createElement('div');
-    messageDiv.textContent = message;
-    errorDiv.appendChild(messageDiv);
-    contentArea.appendChild(errorDiv);
-}
-
-function showContentInfoMessage(contentArea, message) {
-    contentArea.innerHTML = '';
-
-    const infoDiv = document.createElement('div');
-    infoDiv.style.cssText = `
-        background: #e3f2fd;
-        color: #1565c0;
-        border: 2px solid #2196F3;
-        padding: 4px;
-        border-radius: 8px;
-        margin-bottom: 4px;
-        font-family: Arial, sans-serif;
-        text-align: center;
-    `;
-
-    const title = document.createElement('h3');
-    title.textContent = '解析结果';
-    title.style.cssText = 'margin: 0 0 10px 0; color: #1565c0;';
-    infoDiv.appendChild(title);
-
-    const messageDiv = document.createElement('div');
-    messageDiv.textContent = message;
-    infoDiv.appendChild(messageDiv);
-    contentArea.appendChild(infoDiv);
 }
 
 if (document.readyState === 'loading') {
