@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.6.0
+// @version      1.6.1
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -56,17 +56,17 @@ function createParserInit() {
     
     listContainer.appendChild(topButtonBar);
     listContainer.appendChild(contentArea);
-
-    // 将列表框添加到 class="c3ecdb44" 的元素内部
-    const targetContainer = document.querySelector('.c3ecdb44');
-    if (targetContainer) {
-        targetContainer.appendChild(listContainer);
-    }
     
     // 延迟启动观察器
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
         addQuestionCollapseButtons();
+
+        // 将列表框添加到 class="c3ecdb44" 的元素内部
+        const targetContainer = document.querySelector('.c3ecdb44');
+        if (targetContainer) {
+            targetContainer.appendChild(listContainer);
+        }
     }, 350)
 }
 
