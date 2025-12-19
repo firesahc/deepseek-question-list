@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.5.4
+// @version      1.5.5
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -144,7 +144,7 @@ function startObservation(contentArea) {
 
     // 获取目标元素
     const targetElement = document.querySelector('._0f72b0b.ds-scroll-area');
-    if (targetElement.length === 0) {
+    if (!targetElement.length) {
         return false;
     }
     
@@ -280,14 +280,14 @@ function addElementCollapseButtons(messageElements) {
 function addQuestionCollapseButtons(){
     // 尝试查找目标元素
     const questionElement = document.querySelector('._871cbca');
-    if (questionElement.length === 0) {
+    if (!questionElement) {
         return;
     }
     
     const toggleButton = document.createElement('button');
     // 获取目标容器元素
     const containerElement = document.querySelector('._7780f2e');
-    if (containerElement.length === 0) {
+    if (!containerElement) {
         return;
     } else {
         toggleButton.textContent = '▼';
