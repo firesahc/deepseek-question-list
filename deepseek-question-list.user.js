@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.6.1
+// @version      1.7.0
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
 // @license      MIT
-// @grant        none
+// @grant        GM_setValue
+// @grant        GM_getValue
 // ==/UserScript==
 
 let observer = null;
@@ -22,10 +23,7 @@ function createParserInit() {
     listContainer.style.cssText = `
         top: 10px;
         right: 50px;
-        width: 240px;
-        padding: 6px;
         gap: 8px;
-        border: 2px solid #f5f5f5;
         overflow-y: auto;
         background: white;
         z-index: 10000;
@@ -49,7 +47,6 @@ function createParserInit() {
         flex: 1;
         overflow-y: auto;
         padding: 4px;
-        display: block;
     `;
     
     addTopButtons(topButtonBar, listContainer, contentArea);
@@ -419,6 +416,16 @@ function addTopButtons(buttonContainer, listContainer, contentArea) {
         min-width: 30px;
     `;
 
+    // 从油猴存储中读取 isContentVisible 的值，默认值为 true（显示状态）
+    let isContentVisible = GM_getValue('isContentVisible', true);
+
+    // 根据存储的值初始化内容区域的显示状态
+    contentArea.style.display = isContentVisible ? 'block' : 'none';
+    listContainer.style.padding = isContentVisible ? '6px' : '0px';
+    listContainer.style.border = isContentVisible ? '2px solid #f5f5f5' : '';
+    listContainer.style.position =isContentVisible ? '':' fixed';
+    listContainer.style.width=isContentVisible ? '240px':' 100px';
+
     const parseButton = createButton(isObserving? '停止解析':'开始解析', '#2196F3', '#1976D2', () => {
         if (isObserving) {
             // 停止解析
@@ -441,14 +448,15 @@ function addTopButtons(buttonContainer, listContainer, contentArea) {
     });
 
     let isContentVisible = true;
-    const toggleButton = createButton('隐藏列表', '#FF9800', '#F57C00', () => {
+    const toggleButton = createButton(isContentVisible ? '隐藏列表' : '显示列表', '#FF9800', '#F57C00', () => {
         isContentVisible = !isContentVisible;
         contentArea.style.display = isContentVisible ? 'block' : 'none';
-        toggleButton.textContent = isContentVisible ? '隐藏列表' : '显示列表';
         listContainer.style.padding = isContentVisible ? '6px' : '0px';
         listContainer.style.border = isContentVisible ? '2px solid #f5f5f5' : '';
         listContainer.style.position =isContentVisible ? '':' fixed';
         listContainer.style.width=isContentVisible ? '240px':' 100px';
+        // 将新的 isContentVisible 值保存到油猴存储中
+        GM_setValue('isContentVisible', isContentVisible);
     });
 
     buttonContainer.appendChild(parseButton);
