@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.5.6
+// @version      1.6.0
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -20,16 +20,13 @@ function createParserInit() {
     const listContainer = document.createElement('div');
     listContainer.id = 'xpath-parser-list';
     listContainer.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        width: 220px;
-        max-height: 95vh;
+        top: 10px;
+        right: 50px;
+        width: 240px;
+        padding: 6px;
+        gap: 8px;
         overflow-y: auto;
         background: white;
-        border: 2px solid #4CAF50;
-        border-radius: 8px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
         z-index: 10000;
         font-family: Arial, sans-serif;
         font-size: 14px;
@@ -41,10 +38,7 @@ function createParserInit() {
     topButtonBar.style.cssText = `
         display: flex;
         gap: 8px;
-        padding: 10px;
-        background: #f5f5f5;
-        border-bottom: 1px solid #ddd;
-        border-radius: 8px 8px 0 0;
+        background: white;
         flex-wrap: wrap;
     `;
 
@@ -57,16 +51,21 @@ function createParserInit() {
         display: block;
     `;
     
+    addTopButtons(topButtonBar, listContainer, contentArea);
+    
     listContainer.appendChild(topButtonBar);
     listContainer.appendChild(contentArea);
 
+    // 将列表框添加到 class="c3ecdb44" 的元素内部
+    const targetContainer = document.querySelector('.c3ecdb44');
+    if (targetContainer) {
+        targetContainer.appendChild(listContainer);
+    }
+    
     // 延迟启动观察器
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-        startObservation(contentArea);
         addQuestionCollapseButtons();
-        addTopButtons(topButtonBar, listContainer, contentArea);
-        document.body.appendChild(listContainer);
     }, 350)
 }
 
@@ -445,8 +444,10 @@ function addTopButtons(buttonContainer, listContainer, contentArea) {
         isContentVisible = !isContentVisible;
         contentArea.style.display = isContentVisible ? 'block' : 'none';
         toggleButton.textContent = isContentVisible ? '隐藏列表' : '显示列表';
-        listContainer.style.maxHeight = isContentVisible ? '95vh' : 'auto';
-        listContainer.style.height = isContentVisible ? '' : 'auto';
+        listContainer.style.padding = isContentVisible ? '6px' : '0px';
+        listContainer.style.border = isContentVisible ? '2px solid #f5f5f5' : '';
+        listContainer.style.position =isContentVisible ? '':' fixed';
+        listContainer.style.width=isContentVisible ? '240px':' 100px';
     });
 
     buttonContainer.appendChild(parseButton);
