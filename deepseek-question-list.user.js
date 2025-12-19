@@ -25,6 +25,7 @@ function createParserInit() {
         width: 240px;
         padding: 6px;
         gap: 8px;
+        border: 2px solid #f5f5f5;
         overflow-y: auto;
         background: white;
         z-index: 10000;
