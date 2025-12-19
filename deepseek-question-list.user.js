@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.5.5
+// @version      1.5.6
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -144,7 +144,7 @@ function startObservation(contentArea) {
 
     // 获取目标元素
     const targetElement = document.querySelector('._0f72b0b.ds-scroll-area');
-    if (!targetElement.length) {
+    if (!targetElement) {
         return false;
     }
     
