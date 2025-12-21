@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         deepseek-question-list
 // @namespace    https://github.com/firesahc/deepseek-question-list
-// @version      1.7.2
+// @version      1.7.3
 // @description  展示网页版deepseek当前对话的所有提问
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -25,8 +25,7 @@ function createParserInit() {
         right: 50px;
         gap: 8px;
         overflow-y: auto;
-        background: white;
-        z-index: 10000;
+        z-index: 1000;
         font-family: Arial, sans-serif;
         font-size: 14px;
         display: flex;
@@ -37,7 +36,6 @@ function createParserInit() {
     topButtonBar.style.cssText = `
         display: flex;
         gap: 8px;
-        background: white;
         flex-wrap: wrap;
     `;
 
