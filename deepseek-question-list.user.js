@@ -305,6 +305,9 @@ function addQuestionCollapseButtons(){
         return;
     }
     
+    // 保存原始 display 值（CSS 中为 flex），供展开时恢复
+    const originalDisplay = getComputedStyle(questionElement).display;
+
     const toggleButton = document.createElement('button');
     toggleButton.id = 'question-collapse-toggle';
     // 获取目标容器元素
@@ -318,12 +321,12 @@ function addQuestionCollapseButtons(){
         containerElement.style.position = 'relative';
         // 将按钮添加到容器元素内部
         containerElement.appendChild(toggleButton);
-        // 设置按钮样式 - 在容器元素内部居中
+        // 设置按钮样式 - 在容器内水平居中
         toggleButton.style.cssText = `
             position: absolute;
             bottom: 0; 
-            left: 5%;
-            transform: translateX(-50%); /* 水平居中调整 */
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 1000;
             padding: 8px 20px;
             background-color: rgba(255, 255, 255, 0.3);
@@ -344,9 +347,11 @@ function addQuestionCollapseButtons(){
     // 添加点击事件
     toggleButton.addEventListener('click', function () {
         if (questionElement.style.display === 'none') {
-            questionElement.style.display = 'block';
+            // 展开：恢复原始 display 值 (flex)
+            questionElement.style.display = originalDisplay;
             toggleButton.textContent = '▼';
         } else {
+            // 收起：保存当前 inline display 并设为 none
             questionElement.style.display = 'none';
             toggleButton.textContent = '▲';
         };
