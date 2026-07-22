@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DeepSeek 会话文件夹管理
 // @namespace    https://github.com/firesahc/webai-question-list
-// @version      1.0.0
+// @version      1.1.0
 // @description  为 DeepSeek 左侧会话列表添加文件夹分类管理功能，支持自定义文件夹、展开收起、拖拽归类
 // @author       firesahc
 // @match        https://chat.deepseek.com/*
@@ -654,31 +654,6 @@
             listEl.appendChild(folderItem);
         });
 
-        // "未分类"项
-        const uncategorizedCount = Object.values(convFolderMap).filter(v => !v).length;
-        if (uncategorizedCount > 0 || Object.keys(convFolderMap).length === 0) {
-            const uncatItem = createEl('div', {
-                style: `
-                    display: flex;
-                    align-items: center;
-                    padding: 4px 8px;
-                    margin: 2px 0;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-size: 13px;
-                    color: var(--dsw-alias-label-tertiary, #8b95a1);
-                    background: ${currentFilterFolder === FOLDER_UNCATEGORIZED ? 'var(--dsw-specific-sidebar-nav-item-active, rgba(0,0,0,.04))' : 'transparent'};
-                `,
-                textContent: `📂 未分类 (${uncategorizedCount})`,
-                onclick: () => {
-                    currentFilterFolder = FOLDER_UNCATEGORIZED;
-                    renderFolderToolbar();
-                    renderFolderList();
-                    applyFolderFilter();
-                }
-            });
-            listEl.appendChild(uncatItem);
-        }
         } catch (err) {
             console.error('[DSFM] renderFolderList 错误:', err);
             // 错误时显示简单提示
@@ -873,6 +848,22 @@
         menu.appendChild(newFolderOpt);
 
         document.body.appendChild(menu);
+
+        // 位置防溢出：确保菜单不超出视口
+        (function clampMenuPosition() {
+            const rect = menu.getBoundingClientRect();
+            const maxX = window.innerWidth;
+            const maxY = window.innerHeight;
+            if (rect.right > maxX) {
+                menu.style.left = (maxX - rect.width - 8) + 'px';
+            }
+            if (rect.bottom > maxY) {
+                menu.style.top = (maxY - rect.height - 8) + 'px';
+            }
+            // 如果左/上溢出，也纠正
+            if (rect.left < 0) menu.style.left = '8px';
+            if (rect.top < 0) menu.style.top = '8px';
+        })();
 
         // 点击其他地方关闭菜单
         const closeHandler = (e) => {
@@ -1213,6 +1204,12 @@
             .f3d18f6a { display: none !important; }
             /* 减小日期分组间距 */
             ._3098d02 { margin-top: 4px !important; }
+            /* 会话列表容器顶部间距 */
+            ._3586175.ds-scroll-area--enabled { margin-top: 2px !important; }
+            /* 隐藏多余容器 */
+            ._5a8ac7a.a084f19e { display: none !important; }
+            /* 移除元素底部间距 */
+            ._262baab { margin-bottom: 0 !important; }
         `;
         document.head.appendChild(style);
     }
@@ -1247,7 +1244,7 @@
             // 启动 SPA 导航检测
             startSPAObserver();
 
-            // 应用初始筛选（文件夹模式下默认显示未分组）
+            // 文件夹模式下默认显示未分组
             if (folderModeEnabled) {
                 currentFilterFolder = FOLDER_UNCATEGORIZED;
                 renderFolderToolbar();
