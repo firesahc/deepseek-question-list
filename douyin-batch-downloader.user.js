@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         抖音视频/图片批量解析下载器 (HelloTik)
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  在 HelloTik.app 上批量解析下载抖音无水印视频和图片。自动从分享文本中提取链接、自动选择最高画质（含超高清/4K）、支持图片下载。
 // @author       Sisyphus
 // @match        https://www.hellotik.app/*
@@ -301,8 +301,13 @@
     async function downloadOne(url, filename) {
         log('下载: ' + filename, 'info');
         try {
-            const resp = await fetch(url, { referrerPolicy: 'same-origin' });
+            // 方法1: fetch + blob（需要 CORS 支持）
+            const resp = await fetch(url);
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const contentType = resp.headers.get('content-type') || '';
+            if (contentType.includes('text/html') || contentType.includes('application/json')) {
+                throw new Error('非文件响应: ' + contentType);
+            }
             const blob = await resp.blob();
             const blobUrl = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -312,30 +317,42 @@
             a.click();
             setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(blobUrl); }, 1000);
             log('✓ ' + filename, 'success');
+            return;
         } catch (e) {
-            log('直接下载失败 (' + e.message + ')，尝试打开新标签', 'warning');
+            log('fetch 失败 (' + e.message + '), 尝试直接链接下载', 'warning');
+        }
+        // 方法2: 直接锚点点击 + download 属性（不弹窗，不会触发弹窗拦截）
+        try {
             const a = document.createElement('a');
             a.href = url;
             a.download = filename;
-            a.target = '_blank';
-            a.rel = 'noopener noreferrer';
+            a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
             setTimeout(() => document.body.removeChild(a), 100);
+            log('→ ' + filename + ' (直接链接)', 'info');
+        } catch (e2) {
+            log('✗ 下载失败: ' + e2.message, 'error');
         }
     }
 
     function sanitizeFilename(name) {
-        return name.replace(/[<>:"/\\|?*]/g, '_').substring(0, 200) || 'download';
+        // 限制文件名总长 <= 120，Windows 路径最大 260，留足目录部分空间
+        return name.replace(/[<>:"/\\|?*]/g, '_').substring(0, 120) || 'download';
     }
 
     async function dlVideo(result, vi) {
         const v = result.videos[vi];
-        if (!v || !v.url) { toast('没有视频地址', 'error'); return; }
+        if (!v) { toast('没有视频数据', 'error'); return; }
         const best = bestQuality(v);
-        const label = (best.type || 'best').replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '');
+        if (!best.url) { toast('没有视频地址', 'error'); return; }
+        // 检查是否已选择特定画质
+        const selKey = result.url + ':v' + vi;
+        const selFi = _selQuality[selKey];
+        const target = selFi !== undefined && v.fullinfo && v.fullinfo[selFi] ? v.fullinfo[selFi] : best;
+        const label = (target.type || 'best').replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '');
         const fname = sanitizeFilename(`${result.title}_${label}.mp4`);
-        await downloadOne(best.url, fname);
+        await downloadOne(target.url, fname);
     }
 
     async function dlImage(result, pi) {
@@ -350,17 +367,26 @@
         const items = S.results.filter(r => r.status === 'done');
         if (!items.length) { toast('没有已解析的项目', 'error'); return; }
         toast(`开始下载 ${items.length} 个项目…`, 'info');
+        let errCount = 0;
         for (const r of items) {
             for (let vi = 0; vi < r.videos.length; vi++) {
-                await dlVideo(r, vi);
-                await sleep(800);
+                try {
+                    await dlVideo(r, vi);
+                    await sleep(500);
+                } catch (e) { errCount++; log(`✗ 视频下载失败: ${e.message}`, 'error'); }
             }
             for (let pi = 0; pi < r.pics.length; pi++) {
-                await dlImage(r, pi);
-                await sleep(500);
+                try {
+                    await dlImage(r, pi);
+                    await sleep(300);
+                } catch (e) { errCount++; log(`✗ 图片下载失败: ${e.message}`, 'error'); }
             }
         }
-        toast('全部下载完成！', 'success');
+        if (errCount > 0) {
+            toast(`下载完成，${errCount} 个失败（详见日志）`, 'warning');
+        } else {
+            toast('全部下载完成！', 'success');
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -388,6 +414,8 @@
 
     const S = { results: [], isProcessing: false, minimized: false, drag: { x: 0, y: 0 } };
     _unsafeWindow.S = S;
+    // 已选择的画质：_selQuality["url:v0"] = 0（fullinfo 索引）
+    const _selQuality = {};
 
     async function batchParse(rawText) {
         if (S.isProcessing) { toast('正在处理…', 'warning'); return; }
@@ -445,19 +473,32 @@
                     for (let vi = 0; vi < r.videos.length; vi++) {
                         const v = r.videos[vi];
                         const best = bestQuality(v);
+                        const selKey = r.url + ':v' + vi;
+                        const selFi = _selQuality[selKey];
+                        const isSelected = (selFi !== undefined);
+                        // 当前选中的画质项
+                        let curLabel = '最高画质';
+                        let curUrl = best.url;
+                        if (isSelected && v.fullinfo && v.fullinfo[selFi]) {
+                            curLabel = v.fullinfo[selFi].type || '画质' + (selFi+1);
+                            curUrl = v.fullinfo[selFi].url;
+                        }
                         let qHtml = '';
                         if (v.fullinfo && v.fullinfo.length) {
-                            qHtml = v.fullinfo.map(fi =>
-                                `<div class="ht-quality-option${fi.url === best.url ? ' selected' : ''}">` +
+                            const bestUrl = best.url;
+                            qHtml = v.fullinfo.map((fi, fiIdx) => {
+                                const isActive = isSelected ? (fiIdx === selFi) : (fi.url === bestUrl);
+                                return `<div class="ht-quality-option${isActive ? ' selected' : ''}" data-dl-vq="${i},${vi},${fiIdx}" style="cursor:pointer">` +
                                     `<span class="ht-qlabel">${fi.type || '原画'}</span>` +
                                     `<span class="ht-qsize">${fi.size || ''}</span>` +
-                                '</div>'
-                            ).join('');
+                                    '</div>';
+                            }).join('');
                         }
-                        extras += '<div style="margin-bottom:8px;">' +
+                        const btnLabel = isSelected ? ('⬇ 下载视频（' + curLabel + '）') : '⬇ 下载视频（最高画质）';
+                        extras += '<div class="ht-video-entry" style="margin-bottom:8px;">' +
                             '<div style="font-size:12px;font-weight:500;margin:2px 0;">视频' + (vi+1) + '</div>' +
                             qHtml +
-                            '<button class="ht-btn ht-btn-primary ht-btn-sm" data-dl-v="' + i + ',' + vi + '" style="margin-top:4px;">⬇ 下载视频（最高画质）</button>' +
+                            '<button class="ht-btn ht-btn-primary ht-btn-sm" data-dl-v="' + i + ',' + vi + '" style="margin-top:4px;">' + btnLabel + '</button>' +
                         '</div>';
                     }
                 }
@@ -534,6 +575,37 @@
         };
         ta.addEventListener('keydown', e => {
             if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); batchParse(ta.value); }
+        });
+
+        // 画质选择（事件委托，避免 innerHTML 重建丢失 handler）
+        body.addEventListener('click', (e) => {
+            const qOpt = e.target.closest('[data-dl-vq]');
+            if (!qOpt) return;
+            const [ri, vi, fi] = qOpt.getAttribute('data-dl-vq').split(',').map(Number);
+            const r = S.results[ri];
+            if (!r || !r.videos[vi] || !r.videos[vi].fullinfo) return;
+            const selKey = r.url + ':v' + vi;
+            if (_selQuality[selKey] === fi) {
+                delete _selQuality[selKey]; // 取消选择，回退最高画质
+            } else {
+                _selQuality[selKey] = fi;
+            }
+            // 仅更新当前视频块内的 UI，不触发全量 render
+            const parent = qOpt.closest('.ht-video-entry');
+            if (!parent) return;
+            parent.querySelectorAll('[data-dl-vq]').forEach(el => {
+                const pFi = parseInt(el.getAttribute('data-dl-vq').split(',')[2]);
+                el.classList.toggle('selected', pFi === _selQuality[selKey]);
+            });
+            const btn = parent.querySelector('[data-dl-v]');
+            if (btn) {
+                const curFi = _selQuality[selKey];
+                if (curFi !== undefined && r.videos[vi].fullinfo[curFi]) {
+                    btn.textContent = '⬇ 下载视频（' + (r.videos[vi].fullinfo[curFi].type || '画质' + (curFi+1)) + '）';
+                } else {
+                    btn.textContent = '⬇ 下载视频（最高画质）';
+                }
+            }
         });
 
         // 下载按钮委托
