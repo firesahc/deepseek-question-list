@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         抖音视频/图片批量解析下载器 (HelloTik)
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.9
 // @description  在 HelloTik.app 上批量解析下载抖音无水印视频和图片。自动从分享文本中提取链接、自动选择最高画质（含超高清/4K）、支持图片下载。
 // @author       Sisyphus
 // @match        https://www.hellotik.app/*
@@ -292,6 +292,8 @@
         }
 
         log(`[${idx+1}] ✓ "${result.title}" — ${result.videos.length} 视频, ${result.pics.length} 图片`, 'success');
+        // 下载状态追踪: null=未下载, true=成功, false=失败
+        result.__dl = { v: new Array(result.videos.length).fill(null), p: new Array(result.pics.length).fill(null) };
         return result;
     }
 
@@ -316,8 +318,7 @@
             a.href = blobUrl; a.download = filename;
             document.body.appendChild(a); a.click();
             setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(blobUrl); }, 1500);
-            log('✓ ' + filename, 'success');
-            return;
+            log('✓ ' + filename, 'success'); return true;
         } catch (e) {
             if (e.name === 'AbortError') log('fetch 超时', 'warning');
             else log('fetch 失败: ' + e.message, 'warning');
@@ -328,23 +329,23 @@
                 await new Promise((resolve, reject) => {
                     GM_download({ url, name: filename, saveAs: false, onerror: reject, onload: resolve, ontimeout: reject, timeout: 60000 });
                 });
-                log('✓ ' + filename + ' (GM)', 'success');
-                return;
+                log('✓ ' + filename + ' (GM)', 'success'); return true;
             } catch (e) {
                 log('GM_download 失败: ' + (e.message || e), 'warning');
             }
         }
-        // 方法3: 隐藏 iframe（桌面备选，移动端不一定触发下载）
+        // 方法3: 隐藏 iframe（桌面备选）
         try {
             const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = url;
+            iframe.style.display = 'none'; iframe.src = url;
             document.body.appendChild(iframe);
             log('→ ' + filename + ' (iframe)', 'info');
             setTimeout(() => { if (iframe.parentNode) iframe.remove(); }, 30000);
+            return true;
         } catch (e2) {
             log('✗ 下载失败: ' + e2.message, 'error');
         }
+        return false;
     }
 
     function sanitizeFilename(name) {
@@ -357,13 +358,14 @@
         if (!v) { toast('没有视频数据', 'error'); return; }
         const best = bestQuality(v);
         if (!best.url) { toast('没有视频地址', 'error'); return; }
-        // 检查是否已选择特定画质
         const selKey = result.url + ':v' + vi;
         const selFi = _selQuality[selKey];
         const target = selFi !== undefined && v.fullinfo && v.fullinfo[selFi] ? v.fullinfo[selFi] : best;
         const label = (target.type || 'best').replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '');
         const fname = sanitizeFilename(`${result.title}_${label}.mp4`);
-        await downloadOne(target.url, fname);
+        const ok = await downloadOne(target.url, fname);
+        if (result.__dl && result.__dl.v) result.__dl.v[vi] = ok;
+        if (ok) render();
     }
 
     async function dlImage(result, pi) {
@@ -371,7 +373,9 @@
         if (!url) { toast('没有图片地址', 'error'); return; }
         const ext = (url.match(/\.(jpg|jpeg|png|webp|gif|bmp)/i) || [])[1] || 'jpg';
         const fname = sanitizeFilename(`${result.title}_image_${pi+1}.${ext}`);
-        await downloadOne(url, fname);
+        const ok = await downloadOne(url, fname);
+        if (result.__dl && result.__dl.p) result.__dl.p[pi] = ok;
+        if (ok) render();
     }
 
     async function dlAll() {
@@ -436,7 +440,7 @@
     //  批量解析
     // ═══════════════════════════════════════════════════════════════
 
-    const S = { results: [], isProcessing: false, minimized: false, drag: { x: 0, y: 0 } };
+    const S = { results: [], isProcessing: false, drag: { x: 0, y: 0 } };
     _unsafeWindow.S = S;
     // 已选择的画质：_selQuality["url:v0"] = 0（fullinfo 索引）
     const _selQuality = {};
@@ -483,29 +487,29 @@
         const total = S.results.length;
 
         let itemsHtml = '';
-        for (let i = 0; i < S.results.length; i++) {
+        for (let i = 0; i < total; i++) {
             const r = S.results[i];
             const cls = r.status === 'done' ? 'done' : r.status === 'error' ? 'error' : r.status === 'parsing' ? 'parsing' : 'pending';
-            const txt = r.status === 'done' ? '✓ 已完成' : r.status === 'error' ? '✗ ' + (r.error || '失败') : r.status === 'parsing' ? '⟳ 解析中…' : '⏳ 等待';
+            const fileCount = r.status === 'done' ? ((r.videos ? r.videos.length : 0) + (r.pics ? r.pics.length : 0)) : 0;
+            const txt = r.status === 'done' ? ('✓ 已完成 (' + fileCount + ' 个文件)') : r.status === 'error' ? '✗ ' + (r.error || '失败') : r.status === 'parsing' ? '⟳ 解析中…' : '⏳ 等待';
+            if (r._mediaExp === undefined) r._mediaExp = false;
 
             let extras = '';
             if (r.status === 'done') {
                 extras = '<div style="margin-top:8px;border-top:1px solid ' + COLORS.border + ';padding-top:8px;">';
 
-                // 视频
+                // ── 视频 ──
                 if (r.videos.length) {
-                    for (let vi = 0; vi < r.videos.length; vi++) {
+                    const maxV = r._mediaExp ? r.videos.length : Math.min(3, r.videos.length);
+                    for (let vi = 0; vi < maxV; vi++) {
                         const v = r.videos[vi];
                         const best = bestQuality(v);
                         const selKey = r.url + ':v' + vi;
                         const selFi = _selQuality[selKey];
                         const isSelected = (selFi !== undefined);
-                        // 当前选中的画质项
                         let curLabel = '最高画质';
-                        let curUrl = best.url;
                         if (isSelected && v.fullinfo && v.fullinfo[selFi]) {
                             curLabel = v.fullinfo[selFi].type || '画质' + (selFi+1);
-                            curUrl = v.fullinfo[selFi].url;
                         }
                         let qHtml = '';
                         if (v.fullinfo && v.fullinfo.length) {
@@ -519,26 +523,50 @@
                             }).join('');
                         }
                         const btnLabel = isSelected ? ('⬇ 下载视频（' + curLabel + '）') : '⬇ 下载视频（最高画质）';
+                        const dlSt = r.__dl && r.__dl.v ? r.__dl.v[vi] : null;
+                        const stHtml = dlSt === true ? '<span style="color:#10b981;font-size:11px;margin-left:6px;">✓ 已下载</span>'
+                            : dlSt === false ? '<span style="color:#ef4444;font-size:11px;margin-left:6px;">✗ 下载失败</span>'
+                            : '';
                         extras += '<div class="ht-video-entry" style="margin-bottom:8px;">' +
                             '<div style="font-size:12px;font-weight:500;margin:2px 0;">视频' + (vi+1) + '</div>' +
                             qHtml +
-                            '<button class="ht-btn ht-btn-primary ht-btn-sm" data-dl-v="' + i + ',' + vi + '" style="margin-top:4px;">' + btnLabel + '</button>' +
+                            '<div style="display:flex;align-items:center;margin-top:4px;">' +
+                                '<button class="ht-btn ht-btn-primary ht-btn-sm" data-dl-v="' + i + ',' + vi + '">' + btnLabel + '</button>' +
+                                stHtml +
+                            '</div>' +
                         '</div>';
+                    }
+                    if (r.videos.length > 3) {
+                        extras += '<div style="text-align:center;margin:4px 0;">' +
+                            '<button class="ht-btn ht-btn-sm ht-btn-outline" data-ht-exp="' + i + '" style="font-size:11px;">' +
+                            (r._mediaExp ? '▲ 收起视频' : '▼ 展开全部 ' + r.videos.length + ' 个视频') +
+                            '</button></div>';
                     }
                 }
 
-                // 图片
+                // ── 图片 ──
                 if (r.pics && r.pics.length) {
                     extras += '<div style="margin-top:4px;">' +
                         '<div style="font-size:12px;font-weight:500;margin:2px 0;">图片 (' + r.pics.length + ' 张)</div>';
-                    for (let pi = 0; pi < Math.min(r.pics.length, 5); pi++) {
-                        extras += '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">' +
-                            '<img src="' + r.pics[pi] + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;" onerror="this.style.display=\'none\'">' +
+                    const maxP = r._mediaExp ? r.pics.length : Math.min(3, r.pics.length);
+                    for (let pi = 0; pi < maxP; pi++) {
+                        const dlSt = r.__dl && r.__dl.p ? r.__dl.p[pi] : null;
+                        const stHtml = dlSt === true ? '<span style="color:#10b981;font-size:11px;">✓</span>'
+                            : dlSt === false ? '<span style="color:#ef4444;font-size:11px;">✗</span>'
+                            : '';
+                        extras += '<div style="display:flex;align-items:center;gap:6px;margin:4px 0;">' +
+                            '<img src="' + r.pics[pi] + '" style="width:36px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0;" onerror="this.style.display=\'none\'">' +
                             '<span style="font-size:11px;color:' + COLORS.textLight + ';flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">图片 ' + (pi+1) + '</span>' +
-                            '<button class="ht-btn ht-btn-outline ht-btn-sm" data-dl-p="' + i + ',' + pi + '">下载</button>' +
+                            '<button class="ht-btn ht-btn-outline ht-btn-sm" data-dl-p="' + i + ',' + pi + '" style="flex-shrink:0;">下载</button>' +
+                            stHtml +
                         '</div>';
                     }
-                    if (r.pics.length > 5) extras += '<div style="font-size:11px;color:' + COLORS.textLight + ';">…还有 ' + (r.pics.length - 5) + ' 张</div>';
+                    if (r.pics.length > 3) {
+                        extras += '<div style="text-align:center;margin:4px 0;">' +
+                            '<button class="ht-btn ht-btn-sm ht-btn-outline" data-ht-exp="' + i + '" style="font-size:11px;">' +
+                            (r._mediaExp ? '▲ 收起图片' : '▼ 展开全部 ' + r.pics.length + ' 张图片') +
+                            '</button></div>';
+                    }
                     extras += '</div>';
                 }
 
@@ -549,7 +577,10 @@
                 '<div class="ht-result-item">' +
                     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
                         '<span class="ht-status-badge ' + cls + '">' + txt + '</span>' +
-                        '<span style="font-size:11px;color:' + COLORS.textLight + ';">#' + (i+1) + '</span>' +
+                        '<div style="display:flex;align-items:center;gap:6px;">' +
+                            '<button class="ht-btn ht-btn-sm" data-ht-del="' + i + '" style="font-size:10px;padding:1px 6px;color:#ef4444;border:1px solid #fca5a5;border-radius:6px;background:transparent;cursor:pointer;">✕ 删除</button>' +
+                            '<span style="font-size:11px;color:' + COLORS.textLight + ';">#' + (i+1) + '</span>' +
+                        '</div>' +
                     '</div>' +
                     '<div class="ht-result-title">' + (r.title || r.url || '链接 ' + (i+1)) + '</div>' +
                     '<div class="ht-result-meta">' +
@@ -573,17 +604,16 @@
                 '<button class="ht-btn ht-btn-success" id="ht-btn-dl-all"' + (done === 0 ? ' disabled' : '') + '>⬇ 下载全部</button>' +
                 '<button class="ht-btn ht-btn-outline ht-btn-sm" id="ht-btn-clear">清空</button>' +
             '</div>' +
-            (total ? '<div class="ht-progress"><div class="ht-progress-bar"><div class="ht-progress-fill" style="width:' + (done/total*100) + '%"></div></div><div class="ht-progress-text">' + done + '/' + total + ' 完成</div></div>' : '') +
+            (total ? '<div class="ht-progress"><div class="ht-progress-bar"><div class="ht-progress-fill" style="width:' + (done/total*100) + '%"></div></div><div class="ht-progress-text">' + done + '/' + total + ' 完成，共 ' + S.results.reduce((s,r) => s + r.videos.length + (r.pics ? r.pics.length : 0), 0) + ' 个文件</div></div>' : '') +
             '<div style="margin-top:10px;">' + itemsHtml + '</div>' +
             '<div class="ht-log" id="ht-log"></div>';
 
         logEl = body.querySelector('#ht-log');
 
-        // 事件
+        // ── 事件绑定 ──
         const ta = body.querySelector('#ht-url-input');
         const cnt = body.querySelector('#ht-link-count');
 
-        // 实时统计链接数
         ta.addEventListener('input', () => {
             const links = extractDouyinUrls(ta.value);
             if (cnt) cnt.textContent = links.length;
@@ -601,38 +631,57 @@
             if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); batchParse(ta.value); }
         });
 
-        // 画质选择（事件委托，避免 innerHTML 重建丢失 handler）
-        body.addEventListener('click', (e) => {
-            const qOpt = e.target.closest('[data-dl-vq]');
-            if (!qOpt) return;
-            const [ri, vi, fi] = qOpt.getAttribute('data-dl-vq').split(',').map(Number);
-            const r = S.results[ri];
-            if (!r || !r.videos[vi] || !r.videos[vi].fullinfo) return;
-            const selKey = r.url + ':v' + vi;
-            if (_selQuality[selKey] === fi) {
-                delete _selQuality[selKey]; // 取消选择，回退最高画质
-            } else {
-                _selQuality[selKey] = fi;
-            }
-            // 仅更新当前视频块内的 UI，不触发全量 render
-            const parent = qOpt.closest('.ht-video-entry');
-            if (!parent) return;
-            parent.querySelectorAll('[data-dl-vq]').forEach(el => {
-                const pFi = parseInt(el.getAttribute('data-dl-vq').split(',')[2]);
-                el.classList.toggle('selected', pFi === _selQuality[selKey]);
-            });
-            const btn = parent.querySelector('[data-dl-v]');
-            if (btn) {
-                const curFi = _selQuality[selKey];
-                if (curFi !== undefined && r.videos[vi].fullinfo[curFi]) {
-                    btn.textContent = '⬇ 下载视频（' + (r.videos[vi].fullinfo[curFi].type || '画质' + (curFi+1)) + '）';
-                } else {
-                    btn.textContent = '⬇ 下载视频（最高画质）';
-                }
-            }
-        });
+        // ── 事件委托（仅绑定一次） ──
+        if (!body._htInit) {
+            body._htInit = true;
 
-        // 下载按钮委托
+            // 画质选择
+            body.addEventListener('click', (e) => {
+                const qOpt = e.target.closest('[data-dl-vq]');
+                if (qOpt) {
+                    const [ri, vi, fi] = qOpt.getAttribute('data-dl-vq').split(',').map(Number);
+                    const r = S.results[ri];
+                    if (!r || !r.videos[vi] || !r.videos[vi].fullinfo) return;
+                    const selKey = r.url + ':v' + vi;
+                    if (_selQuality[selKey] === fi) delete _selQuality[selKey];
+                    else _selQuality[selKey] = fi;
+                    const parent = qOpt.closest('.ht-video-entry');
+                    if (parent) {
+                        parent.querySelectorAll('[data-dl-vq]').forEach(el => {
+                            el.classList.toggle('selected', parseInt(el.getAttribute('data-dl-vq').split(',')[2]) === _selQuality[selKey]);
+                        });
+                        const btn = parent.querySelector('[data-dl-v]');
+                        if (btn) {
+                            const curFi = _selQuality[selKey];
+                            btn.textContent = curFi !== undefined && r.videos[vi].fullinfo[curFi]
+                                ? '⬇ 下载视频（' + r.videos[vi].fullinfo[curFi].type + '）'
+                                : '⬇ 下载视频（最高画质）';
+                        }
+                    }
+                    return;
+                }
+
+                // 删除按钮
+                const delBtn = e.target.closest('[data-ht-del]');
+                if (delBtn) {
+                    const ri = parseInt(delBtn.getAttribute('data-ht-del'));
+                    S.results.splice(ri, 1);
+                    render();
+                    return;
+                }
+
+                // 展开/收起项目内媒体
+                const expBtn = e.target.closest('[data-ht-exp]');
+                if (expBtn) {
+                    const ri = parseInt(expBtn.getAttribute('data-ht-exp'));
+                    const r = S.results[ri];
+                    if (r) { r._mediaExp = !r._mediaExp; render(); }
+                    return;
+                }
+            });
+        }
+
+        // ── 下载按钮 ──
         body.querySelectorAll('[data-dl-v]').forEach(el => {
             el.onclick = () => {
                 const [ri, vi] = el.getAttribute('data-dl-v').split(',').map(Number);
@@ -678,8 +727,19 @@
         });
 
         panel.querySelector('#ht-minimize').onclick = () => {
-            S.minimized = !S.minimized;
-            panel.classList.toggle('minimized', S.minimized);
+            panel.remove();
+            const reopen = document.createElement('button');
+            reopen.textContent = '🎬';
+            Object.assign(reopen.style, {
+                position: 'fixed', bottom: '24px', right: '20px', zIndex: '999998',
+                width: '48px', height: '48px', background: '#000', color: '#fff',
+                border: 'none', borderRadius: '50%', fontSize: '20px', cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+            });
+            reopen.onmouseenter = () => { reopen.style.transform = 'scale(1.1)'; };
+            reopen.onmouseleave = () => { reopen.style.transform = ''; };
+            reopen.onclick = () => { reopen.remove(); createPanel(); };
+            document.body.appendChild(reopen);
         };
         panel.querySelector('#ht-close').onclick = () => panel.remove();
 
@@ -707,7 +767,6 @@
             font-size: 14px; color: ${COLORS.text};
             overflow: hidden;
         }
-        #ht-batch-panel.minimized #ht-batch-body { display: none; }
         #ht-batch-header {
             display: flex; align-items: center; justify-content: space-between;
             padding: 12px 16px; background: ${COLORS.primary}; color: white;
@@ -796,7 +855,14 @@
         .ht-toast.info    { background: ${COLORS.primary}; }
         @keyframes ht-slide-up { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @media (max-width: 768px) {
-            #ht-batch-panel { top: auto; bottom: 0; right: 0; left: 0; width: 100%; max-height: 60vh; border-radius: 16px 16px 0 0; }
+            #ht-batch-panel { top: 0; bottom: 0; left: 0; right: 0; width: 100%; max-height: 100vh; border-radius: 0; }
+            #ht-batch-header { padding: 10px 14px; }
+            #ht-batch-header h3 { font-size: 14px; }
+            #ht-batch-body { padding: 12px; }
+            #ht-url-input { height: 80px; font-size: 14px; }
+            .ht-btn { padding: 10px 14px; font-size: 14px; }
+            .ht-btn-sm { padding: 6px 10px; font-size: 13px; }
+            #ht-log { max-height: 80px; font-size: 12px; }
         }
     `);
 
