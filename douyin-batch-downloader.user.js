@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         抖音视频/图片批量解析下载器 (HelloTik)
 // @namespace    http://tampermonkey.net/
-// @version      1.9.2
+// @version      1.10
 // @description  在 HelloTik.app 上批量解析下载抖音无水印视频和图片。自动从分享文本中提取链接、自动选择最高画质（含超高清/4K）、支持图片下载。
 // @author       Sisyphus
 // @match        https://www.hellotik.app/*
@@ -482,6 +482,25 @@ function sanitizeFilename(name) {
         toast(`完成: ${ok}/${urls.length} 个成功`, ok > 0 ? 'success' : 'error');
     }
 
+    async function retryOne(idx) {
+        const r = S.results[idx];
+        if (!r || S.isProcessing) return;
+        S.isProcessing = true;
+        S.results[idx].status = 'parsing';
+        S.results[idx].title = '解析中…';
+        render();
+        try {
+            const d = await parseOne(r.url, idx);
+            S.results[idx] = { ...d, status: 'done' };
+            toast('重试成功', 'success');
+        } catch (e) {
+            S.results[idx] = { url: r.url, title: '解析失败', videos: [], pics: [], status: 'error', error: e.message };
+            toast('重试失败: ' + e.message, 'error');
+        }
+        S.isProcessing = false;
+        render();
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  UI
     // ═══════════════════════════════════════════════════════════════
@@ -583,7 +602,10 @@ function sanitizeFilename(name) {
             itemsHtml +=
                 '<div class="ht-result-item">' +
                     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
-                        '<span class="ht-status-badge ' + cls + '">' + txt + '</span>' +
+                        '<div style="display:flex;align-items:center;gap:6px;">' +
+                            '<span class="ht-status-badge ' + cls + '">' + txt + '</span>' +
+                            (r.status === 'error' ? '<button class="ht-btn ht-btn-sm" data-ht-retry="' + i + '" style="font-size:10px;padding:1px 6px;color:#6366f1;border:1px solid #a5b4fc;border-radius:6px;background:transparent;cursor:pointer;">🔄 重试</button>' : '') +
+                        '</div>' +
                         '<div style="display:flex;align-items:center;gap:6px;">' +
                             '<button class="ht-btn ht-btn-sm" data-ht-del="' + i + '" style="font-size:10px;padding:1px 6px;color:#ef4444;border:1px solid #fca5a5;border-radius:6px;background:transparent;cursor:pointer;">✕ 删除</button>' +
                             '<span style="font-size:11px;color:' + COLORS.textLight + ';">#' + (i+1) + '</span>' +
@@ -674,6 +696,14 @@ function sanitizeFilename(name) {
                     const ri = parseInt(delBtn.getAttribute('data-ht-del'));
                     S.results.splice(ri, 1);
                     render();
+                    return;
+                }
+
+                // 重试按钮
+                const retryBtn = e.target.closest('[data-ht-retry]');
+                if (retryBtn) {
+                    const ri = parseInt(retryBtn.getAttribute('data-ht-retry'));
+                    retryOne(ri);
                     return;
                 }
 
