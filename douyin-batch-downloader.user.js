@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         抖音视频/图片批量解析下载器 (HelloTik)
 // @namespace    http://tampermonkey.net/
-// @version      1.9.1
+// @version      1.9.2
 // @description  在 HelloTik.app 上批量解析下载抖音无水印视频和图片。自动从分享文本中提取链接、自动选择最高画质（含超高清/4K）、支持图片下载。
 // @author       Sisyphus
 // @match        https://www.hellotik.app/*
@@ -348,10 +348,17 @@
         return false;
     }
 
-    function sanitizeFilename(name) {
-        // 限制文件名总长 <= 80
-        return name.replace(/[<>:"/\\|?*]/g, '_').substring(0, 80) || 'download';
+function sanitizeFilename(name) {
+    // 先脱敏非法字符，再截断，但保证扩展名不被切掉
+    const clean = name.replace(/[<>:"/\\|?*]/g, '_');
+    const dot = clean.lastIndexOf('.');
+    if (dot > 0 && clean.length - dot <= 5) {
+        const base = clean.substring(0, dot);
+        const ext = clean.substring(dot);
+        return (base.substring(0, 80 - ext.length) + ext) || 'download';
     }
+    return clean.substring(0, 80) || 'download';
+}
 
     async function dlVideo(result, vi) {
         const v = result.videos[vi];
