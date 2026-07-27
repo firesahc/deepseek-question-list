@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         抖音视频/图片批量解析下载器 (HelloTik)
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.7
 // @description  在 HelloTik.app 上批量解析下载抖音无水印视频和图片。自动从分享文本中提取链接、自动选择最高画质（含超高清/4K）、支持图片下载。
 // @author       Sisyphus
 // @match        https://www.hellotik.app/*
 // @icon         https://www.hellotik.app/favicon.ico
 // @grant        GM_addStyle
+// @grant        GM_download
 // @grant        unsafeWindow
 // @run-at       document-idle
 // ==/UserScript==
@@ -300,37 +301,47 @@
 
     async function downloadOne(url, filename) {
         log('下载: ' + filename, 'info');
+        // 方法1: fetch + blob（CORS 可用时优先），10s 超时
         try {
-            // 方法1: fetch + blob（需要 CORS 支持）
-            const resp = await fetch(url);
+            const ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const timer = ac ? setTimeout(() => ac.abort(), 10000) : null;
+            const resp = await fetch(url, ac ? { signal: ac.signal } : {});
+            if (timer) clearTimeout(timer);
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            const contentType = resp.headers.get('content-type') || '';
-            if (contentType.includes('text/html') || contentType.includes('application/json')) {
-                throw new Error('非文件响应: ' + contentType);
-            }
+            const ct = resp.headers.get('content-type') || '';
+            if (ct.includes('text/html') || ct.includes('application/json')) throw new Error('非文件响应');
             const blob = await resp.blob();
             const blobUrl = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = blobUrl;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(blobUrl); }, 1000);
+            a.href = blobUrl; a.download = filename;
+            document.body.appendChild(a); a.click();
+            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(blobUrl); }, 1500);
             log('✓ ' + filename, 'success');
             return;
         } catch (e) {
-            log('fetch 失败 (' + e.message + '), 尝试直接链接下载', 'warning');
+            if (e.name === 'AbortError') log('fetch 超时', 'warning');
+            else log('fetch 失败: ' + e.message, 'warning');
         }
-        // 方法2: 直接锚点点击 + download 属性（不弹窗，不会触发弹窗拦截）
+        // 方法2: GM_download（移动端最可靠，绕过 CORS）
+        if (typeof GM_download !== 'undefined') {
+            try {
+                await new Promise((resolve, reject) => {
+                    GM_download({ url, name: filename, saveAs: false, onerror: reject, onload: resolve, ontimeout: reject, timeout: 60000 });
+                });
+                log('✓ ' + filename + ' (GM)', 'success');
+                return;
+            } catch (e) {
+                log('GM_download 失败: ' + (e.message || e), 'warning');
+            }
+        }
+        // 方法3: 隐藏 iframe（桌面备选，移动端不一定触发下载）
         try {
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(() => document.body.removeChild(a), 100);
-            log('→ ' + filename + ' (直接链接)', 'info');
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = url;
+            document.body.appendChild(iframe);
+            log('→ ' + filename + ' (iframe)', 'info');
+            setTimeout(() => { if (iframe.parentNode) iframe.remove(); }, 30000);
         } catch (e2) {
             log('✗ 下载失败: ' + e2.message, 'error');
         }
@@ -364,28 +375,41 @@
     }
 
     async function dlAll() {
-        const items = S.results.filter(r => r.status === 'done');
-        if (!items.length) { toast('没有已解析的项目', 'error'); return; }
-        toast(`开始下载 ${items.length} 个项目…`, 'info');
-        let errCount = 0;
-        for (const r of items) {
-            for (let vi = 0; vi < r.videos.length; vi++) {
-                try {
-                    await dlVideo(r, vi);
-                    await sleep(500);
-                } catch (e) { errCount++; log(`✗ 视频下载失败: ${e.message}`, 'error'); }
+        try {
+            const items = S.results.filter(r => r.status === 'done');
+            if (!items.length) { toast('没有已解析的项目', 'error'); return; }
+            toast(`开始下载 ${items.length} 个项目…`, 'info');
+            log(`dlAll: 共 ${items.length} 个项目`, 'info');
+            let errCount = 0;
+            for (let ri = 0; ri < items.length; ri++) {
+                const r = items[ri];
+                log(`dlAll: 项目 #${ri+1} "${(r.title||'').substring(0,30)}"`, 'info');
+                toast(`[${ri+1}/${items.length}] ${(r.title||'').substring(0,20)}…`, 'info', 2000);
+                // 防御性检查 videos
+                const vids = Array.isArray(r.videos) ? r.videos : [];
+                for (let vi = 0; vi < vids.length; vi++) {
+                    try {
+                        await dlVideo(r, vi);
+                        await sleep(500);
+                    } catch (e) { errCount++; log(`✗ 视频下载失败 #${ri+1}.${vi+1}: ${e.message}`, 'error'); }
+                }
+                // 防御性检查 pics
+                const pics = Array.isArray(r.pics) ? r.pics : [];
+                for (let pi = 0; pi < pics.length; pi++) {
+                    try {
+                        await dlImage(r, pi);
+                        await sleep(300);
+                    } catch (e) { errCount++; log(`✗ 图片下载失败 #${ri+1}.${pi+1}: ${e.message}`, 'error'); }
+                }
             }
-            for (let pi = 0; pi < r.pics.length; pi++) {
-                try {
-                    await dlImage(r, pi);
-                    await sleep(300);
-                } catch (e) { errCount++; log(`✗ 图片下载失败: ${e.message}`, 'error'); }
+            if (errCount > 0) {
+                toast(`下载完成，${errCount} 个失败（详见日志）`, 'warning');
+            } else {
+                toast('全部下载完成！', 'success');
             }
-        }
-        if (errCount > 0) {
-            toast(`下载完成，${errCount} 个失败（详见日志）`, 'warning');
-        } else {
-            toast('全部下载完成！', 'success');
+        } catch (e) {
+            log('dlAll 意外崩溃: ' + (e.message || e), 'error');
+            toast('批量下载意外中断: ' + (e.message || '未知错误'), 'error');
         }
     }
 
