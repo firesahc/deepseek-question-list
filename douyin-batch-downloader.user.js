@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         抖音视频/图片批量解析下载器 (HelloTik)
 // @namespace    http://tampermonkey.net/
-// @version      1.10
+// @version      1.11
 // @description  在 HelloTik.app 上批量解析下载抖音无水印视频和图片。自动从分享文本中提取链接、自动选择最高画质（含超高清/4K）、支持图片下载。
 // @author       Sisyphus
 // @match        https://www.hellotik.app/*
@@ -61,12 +61,15 @@
     }
 
     // ── Toast ──────────────────────────────────────────────────
+    let _toastCount = 0;
     function toast(msg, type = 'info', dur = 3000) {
         const el = document.createElement('div');
         el.className = 'ht-toast ' + type;
         el.textContent = msg;
+        el.style.bottom = (20 + _toastCount * 50) + 'px';
+        _toastCount++;
         document.body.appendChild(el);
-        setTimeout(() => el.remove(), dur);
+        setTimeout(() => { el.remove(); _toastCount = Math.max(0, _toastCount - 1); }, dur);
     }
 
     // ── Log ────────────────────────────────────────────────────
@@ -98,13 +101,13 @@
             return 60;
         }
         // 关键词匹配
-        if (t.includes('4k') || t.includes('2160') || t.includes('超高清') || t.includes('超清') || t.includes('4k超高清')) return 11;
-        if (t.includes('1080') || t.includes('全高清') || t.includes('fhd')) return 21;
+        if (t.includes('4k') || t.includes('2160') || t.includes('超高清') || t.includes('超清') || t.includes('4k超高清')) return 10;
+        if (t.includes('1080') || t.includes('全高清') || t.includes('fhd')) return 20;
         if (t.includes('高清') || t.includes('hd')) return 25;
-        if (t.includes('720')) return 31;
-        if (t.includes('540')) return 41;
-        if (t.includes('480')) return 51;
-        if (t.includes('360')) return 61;
+        if (t.includes('720')) return 30;
+        if (t.includes('540')) return 40;
+        if (t.includes('480')) return 50;
+        if (t.includes('360')) return 60;
         if (t.includes('流畅') || t.includes('标清') || t.includes('sd')) return 70;
         return 99; // 未知
     }
@@ -123,6 +126,7 @@
 
     const origFetch = _unsafeWindow.fetch.bind(_unsafeWindow);
     let capturedParseResolve = null;
+    let capturedParseError = null;  // 非加密 API 错误响应
 
     _unsafeWindow.fetch = function(input, init) {
         const reqUrl = (typeof input === 'string' ? input : (input instanceof Request ? input.url : input && input.href)) || '';
@@ -134,6 +138,9 @@
                     if (body && body.encrypt) {
                         capturedParseResolve(body);
                         capturedParseResolve = null;
+                    } else if (body) {
+                        // API 返回了非加密响应（可能是错误）
+                        capturedParseError = body;
                     }
                 } catch (_) {}
             }
@@ -163,7 +170,6 @@
             while (hook) {
                 const st = hook.memoizedState;
                 if (st && typeof st === 'object' && st.data && (st.data.videos || st.data.pics)) { found = st.data; return; }
-                if (st && typeof st === 'object' && st.sourceUrl && st.data && (st.data.videos || st.data.pics)) { found = st.data; return; }
                 hook = hook.next;
             }
             if (fiber.child) walk(fiber.child);
@@ -177,7 +183,7 @@
         const result = { title: '', videos: [], pics: [] };
 
         // 找页面标题
-        const titleEl = document.querySelector('h1, h2, h3, [class*="title"]');
+        const titleEl = document.querySelector('h1:not(#ht-batch-panel *), h2:not(#ht-batch-panel *), h3:not(#ht-batch-panel *), [class*="title"]:not(#ht-batch-panel *)');
         if (titleEl) result.title = titleEl.textContent.trim().substring(0, 200);
 
         // 找视频元素
@@ -218,6 +224,7 @@
         log(`[${idx+1}] 解析: ${url}`, 'info');
         // 重置捕获的解密数据，避免使用上一个 URL 的
         capturedDecryptedData = null;
+        capturedParseError = null;
 
         const input = document.querySelector('input[type="text"]');
         if (!input) throw new Error('找不到输入框');
@@ -238,6 +245,16 @@
         let data = null;
         for (let retry = 0; retry < 12; retry++) {
             await sleep(1000);
+
+            // 检测页面是否已显示错误（解析失败时页面会重置输入框、启用提交按钮）
+            const submitEl = document.querySelector('button[type="submit"]');
+            const inputVal = document.querySelector('input[type="text"]');
+            if (submitEl && !submitEl.disabled && inputVal && !inputVal.value.trim()) {
+                const errBody = capturedParseError;
+                const errMsg = (errBody && errBody.message) || (errBody && errBody.error) || (errBody && errBody.msg) || '';
+                throw new Error(errMsg || '页面解析失败');
+            }
+
             data = findVideoState();
             if (data && (data.videos || data.pics)) { log(`[${idx+1}] 从 React state 提取成功`, 'info'); break; }
             data = extractFromDOM();
@@ -326,12 +343,16 @@
         // 方法2: GM_download（移动端最可靠，绕过 CORS）
         if (typeof GM_download !== 'undefined') {
             try {
-                await new Promise((resolve, reject) => {
-                    GM_download({ url, name: filename, saveAs: false, onerror: reject, onload: resolve, ontimeout: reject, timeout: 60000 });
-                });
+                await Promise.race([
+                    new Promise((resolve, reject) => {
+                        GM_download({ url, name: filename, saveAs: false, onerror: reject, onload: resolve, ontimeout: reject, timeout: 60000 });
+                    }),
+                    // 兜底超时：GM_download 有时候不回调
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('GM_download 无响应')), 70000)),
+                ]);
                 log('✓ ' + filename + ' (GM)', 'success'); return true;
             } catch (e) {
-                log('GM_download 失败: ' + (e.message || e), 'warning');
+                log('GM_download 失败: ' + (e.message || e || '未知错误'), 'warning');
             }
         }
         // 方法3: 隐藏 iframe（桌面备选）
@@ -349,15 +370,26 @@
     }
 
 function sanitizeFilename(name) {
-    // 先脱敏非法字符，再截断，但保证扩展名不被切掉
     const clean = name.replace(/[<>:"/\\|?*]/g, '_');
     const dot = clean.lastIndexOf('.');
+    let ext = '', base = clean;
     if (dot > 0 && clean.length - dot <= 5) {
-        const base = clean.substring(0, dot);
-        const ext = clean.substring(dot);
-        return (base.substring(0, 80 - ext.length) + ext) || 'download';
+        ext = clean.substring(dot);
+        base = clean.substring(0, dot);
     }
-    return clean.substring(0, 80) || 'download';
+    // 找到关键后缀（最后一个 _ 开始，如 _best, _image_1），优先保留
+    const sep = base.lastIndexOf('_');
+    let prefix = base, suffix = '';
+    if (sep > 0) {
+        prefix = base.substring(0, sep);
+        suffix = base.substring(sep);  // 包含 `_`
+    }
+    const maxBase = 80 - ext.length;
+    if (suffix.length >= maxBase) {
+        // 极端情况：后缀本身超长，回退到从末尾截断
+        return base.substring(0, maxBase) + ext || 'download';
+    }
+    return (prefix.substring(0, maxBase - suffix.length) + suffix + ext) || 'download';
 }
 
     async function dlVideo(result, vi) {
@@ -652,6 +684,8 @@ function sanitizeFilename(name) {
         body.querySelector('#ht-btn-dl-all').onclick = dlAll;
         body.querySelector('#ht-btn-clear').onclick = () => {
             S.results = []; ta.value = '';
+            // 清理画质选择记录
+            for (const k of Object.keys(_selQuality)) delete _selQuality[k];
             if (cnt) cnt.textContent = '0';
             if (logEl) logEl.innerHTML = '';
             render();
